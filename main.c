@@ -3,10 +3,11 @@
 #include <termios.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
+#include <string.h>
 
 #define ESC "\033"
 #define CRTL(c) ((c) - 'A' + 1)
-#define INTIALLINES 10
+#define INTIALLINES 200
 #define INITIALPERLINE 50
 
 //termios
@@ -18,26 +19,26 @@ void clearscreen()
 	printf(ESC"[2J"ESC"[H");
 }
 
-void manageeditor(char ** text);
+void manageeditor(unsigned char ** text);
 
 int main()
 {
 	printf(ESC"[?25l");
-	int i, j;
+	int i, j, currentscreenline;
 	struct winsize size;
 	if (ioctl(STDOUT_FILENO,TIOCGWINSZ, &size) < 0) {
     	size.ws_row = 25;
     	size.ws_col = 25;
 	}
 	enable_raw();
-	unsigned char ** text = malloc(sizeof(unsigned char*)*(INTIALLINES+1));
+	unsigned char ** text = malloc(sizeof(unsigned char*)*(INTIALLINES + 1));
 	text[INTIALLINES] = NULL;
 	i = 0;
-	while (text[i]) {
+	while (i < INTIALLINES) {
 		text[i] = malloc(sizeof(unsigned char) * INITIALPERLINE);
-		text[i][0] = '\0';
 		i++;
 	}
+	text[0][0] = '\0';
 	manageeditor(text);
 	clearscreen();
 	i = 0;
@@ -45,13 +46,15 @@ int main()
 	while (text[i]) {
 		printf("line: %d\n", i);
 		j = 0;
+		currentscreenline = 0;
 		while (text[i][j]) {
 			putchar(text[i][j]);
-			j++;
-			if (j + 1 == size.ws_col)
+			j++; currentscreenline++;
+			if (currentscreenline + 1 == size.ws_col) {
+				currentscreenline = 0;
 				putchar('\n');
+			}
 		}
-		printf("\\0");
 		putchar('\n');
 		free(text[i]);
 		i++;
@@ -69,19 +72,36 @@ enum Keys {
 	BACKSPACE = 127
 };
 
+
+//lines[currentline] = realloc(lines[currentline], sizeof(unsigned char) * (INITIALPERLINE + nullpos[currentline] + 1)); works
+#define reallocateline(s, nullpos) (s = realloc(s, sizeof(unsigned char) * (INITIALPERLINE + nullpos + 1)))
+/*int reallocateline(char * s, int nullpos) //doesn't work
+{
+	printf("Segfault1");
+	s = realloc(s, sizeof(unsigned char) * (INITIALPERLINE + nullpos + 1));
+	printf("Segfault2"); // this one isn't printed when realloc doesn't work
+	return;
+	printf(ESC"[%d;%df", 24, 1);
+	printf("%lx\n",s);
+	if (s == NULL)
+		return -1;
+	return 0;
+}*/
+
 void clearline(int ws_colsize);
-void updateline(int ws_colsize, int currentcollumns, int currentchar, char s[]);
-void backmovline(int ws_colsize, int *currentcollumns, int currentchar, char s[]); //for Left arrow and backspace
-void firstpl(int ws_colsize, int currentline, char s[]);
+void updateline(int ws_colsize, int currentcollumns, int currentchar, unsigned char * s);
+void backmovline(int ws_colsize, int *currentcollumns, int currentchar, unsigned char * s); //for Left arrow and backspace
+void firstpl(int ws_colsize, unsigned char s[]);
 
 void resetx();
 void resety();
 void addx(int n);
 void addy(int n);
+void showcursor();
 int getx();
 int gety();
 
-void movbackstr(char s[], int i) //i is the empty one
+void movbackstr(unsigned char * s, int i) //i is the empty one
 {
 	s[i] = s[i + 1];
 	++i;
@@ -91,9 +111,9 @@ void movbackstr(char s[], int i) //i is the empty one
 	}
 }
 
-void movstr(char s[], int i) //i is the empty one
+void movstr(unsigned char * s, int i) //i is the empty one
 {
-	char temp = s[i], secondtemp;
+	unsigned char temp = s[i], secondtemp;
 	s[i++] = ' ';
 	while (temp) {
 		secondtemp = s[i];
@@ -104,10 +124,23 @@ void movstr(char s[], int i) //i is the empty one
 	
 }
 
-void manageeditor(char ** s)
+void movlines(unsigned char ** lines, int i, int nlines) //i is the empty one
 {
-	int * nullpos = calloc(INTIALLINES,sizeof(int)), currentcollumns = 0;
-	int currentchar = 0, currentline = 0, nlines = 0; //nlines starting with 0 like the index
+	unsigned char temp = lines[i], secondtemp;
+	i++;
+	while (i < nlines) {
+		secondtemp = lines[i];
+		lines[i++] = temp;
+		temp = secondtemp;
+	}
+	lines[i] = temp;
+}
+
+void manageeditor(unsigned char ** lines)
+{
+	int * nullpos = malloc(sizeof(int) * INTIALLINES);
+	nullpos[0] = 0;
+	int currentchar = 0, currentline = 0, nlines = 0, currentcollumns = 0; //nlines starting with 0 like the index
 	unsigned char c;
 	struct winsize size;
 	if (ioctl(STDOUT_FILENO,TIOCGWINSZ, &size) < 0) {
@@ -115,113 +148,109 @@ void manageeditor(char ** s)
     	size.ws_col = 25;
 	}
 	clearscreen();
-	putchar('|');
-	resetx(); //put the cursor position on the initial |
-	s[0][0] = '\0';
+	showcursor();
 	while ((c = getchar()) != CRTL('Q')) {
+		printf(ESC"[%d;%df", gety(), getx()); //for debugging
 		switch (c)
 		{
 		case CRTL(ARROWLEFT):
 			addx(-1); 
+			showcursor();
 			if (currentchar) {
 				currentchar--;
-				backmovline(size.ws_col, &currentcollumns, currentchar, s[currentline]);
+				backmovline(size.ws_col, &currentcollumns, currentchar, lines[currentline]);
 			}
 			break;
 		case CRTL(ARROWRIGHT):
 			if (currentchar == nullpos[currentline])
 				break;
 			
-			currentchar++;
-			{ //to define comparison without issue we reduce the scope
+			{ //to destroy comparison quickly
 			int comparison = size.ws_col;
 			if (currentcollumns)
 				comparison--;
+			currentchar++;
 			if (getx() == comparison - 1) {
 				clearline(size.ws_col);
 				putchar('>');
 				addx(1);
 				currentcollumns++;
-				putchar(s[currentline][158 + (currentcollumns - 1) * 156]); //since updateline only update on right side
+				putchar(lines[currentline][158 + (currentcollumns - 1) * 156]); //since updateline only update on right side
 				addx(1);
-				updateline(size.ws_col, currentcollumns, currentchar, s[currentline]);
+				showcursor();
+				updateline(size.ws_col, currentcollumns, currentchar, lines[currentline]);
 				break;
 			}	
 			}
-			addx(1);
-			
-			
+						
 			if (currentchar != nullpos[currentline]) {
-				addx(-1);
-				putchar(s[currentline][currentchar - 1]);
+				putchar(lines[currentline][currentchar - 1]);
 				addx(1);
-				addx(1);
-				int i = currentchar;
-				int comparison = size.ws_col - 2; //to turn into the list element
-				if (currentcollumns)
-					comparison += (currentcollumns) * 156;
-				while (s[currentline][i] && i < comparison) {
-					putchar(s[currentline][i]);
-					i++;
-				}
-				addx(-1);
+				showcursor();
+				updateline(size.ws_col, currentcollumns, currentchar, lines[currentline]);
 			}
 			else if (currentchar == nullpos[currentline])
 			{
-				currentchar--;
-				addx(-1);
-				putchar(s[currentline][currentchar]);
-				addx(1); currentchar++;
+				putchar(lines[currentline][currentchar - 1]);
+				addx(1); showcursor();
 			}
 			break;
 		case BACKSPACE:
-			if (getx() == 1)
+			if (!currentchar)
 				break;
 			addx(-1);
-			putchar(' ');
-			addx(1);
+			currentchar--; nullpos[currentline]--;
 			if (currentchar != nullpos[currentline]) {
-				movbackstr(s[currentline], currentchar - 1);
-				nullpos[currentline] -= 1;
-				addx(-1); currentchar--;
+				movbackstr(lines[currentline], currentchar);
+				backmovline(size.ws_col, &currentcollumns, currentchar, lines[currentline]);
 			}
 			else {
+				addx(1);
+				putchar(' '); //erase old cursor
 				addx(-1);
-				if (nullpos[currentline] && currentchar) {
-					currentchar--;
-					s[currentline][currentchar] = '\0';
-					nullpos[currentline] -= 1;
-				}
+				lines[currentline][currentchar] = '\0';
+				if (currentcollumns && getx() == 2)
+					backmovline(size.ws_col, &currentcollumns, currentchar, lines[currentline]);
 			}
-			backmovline(size.ws_col, &currentcollumns, currentchar, s[currentline]);
+			showcursor(); //erase erased char and replace it by cursor
 			break;
 		case '\n':
+			if (!lines[nlines + 1]) {
+				lines = realloc(lines, (sizeof(unsigned char*)) * (INTIALLINES + nlines + 2)); //+1 for NULL pointer
+				lines[INTIALLINES + nlines + 1] = NULL;
+				nullpos = realloc(nullpos, (sizeof(int)) * (INTIALLINES + nlines + 1));
+			}
+			nullpos[currentline + 1] = 0;
+			if (currentline != nlines) {
+				movlines(lines, currentline + 1, nlines);
+			}
 			if (currentchar != nullpos[currentline]) {
-				int i = currentchar, j = 0;
-				/*/if (j > INITIALPERLINE - 1) {
-					s[currentline + 1] = realloc(s[currentline + 1], sizeof(unsigned char) * (INITIALPERLINE + nullpos[currentline] + 1)); //not great but nvm
-				}/*/
-				while (s[currentline][i]) {
-					s[currentline + 1][j] = s[currentline][i];
-					i++; j++;
-				}
-				s[currentline + 1][j] = '\0';
+				int i, j;
+				if (currentchar > INITIALPERLINE - 1)
+					reallocateline(lines[currentline + 1], nullpos[currentline] - currentchar);
+
+				for(i = currentchar, j = 0; lines[currentline][i]; i++, j++)
+					lines[currentline + 1][j] = lines[currentline][i];
+				
+				lines[currentline + 1][j] = '\0';
 				nullpos[currentline + 1] = j;
 				nullpos[currentline] = currentchar;
-				s[currentline][currentchar] = '\0';
+				lines[currentline][currentchar] = '\0';
+				reallocateline(lines[currentline], nullpos[currentline]);
 			}
-			firstpl(size.ws_col, currentline, s[currentline]);
+			firstpl(size.ws_col, lines[currentline]);
 			resetx(); currentchar = 0, currentcollumns = 0;
-			addy(1); currentline++; nlines++;
-			putchar('|');
-			resetx(); //put the cursor position on the initial |
-			//if (currentchar != nullpos[currentline])
-			updateline(size.ws_col, currentcollumns, currentchar, s[currentline]);
-			//else
-				//s[currentline][0] = '\0';
+			if (gety() != size.ws_row)
+				addy(1); 
+			else
+				putchar('\n');
+			currentline++; nlines++;
+			showcursor();
+			if (currentchar != nullpos[currentline])
+				updateline(size.ws_col, currentcollumns, currentchar, lines[currentline]);
 			break;
 		default:
-			printf(ESC"[%d;%df", gety(), getx()); //for debugging
+			{
 			int comparison = size.ws_col; //comparison is the length of the line, since the cursor takes one char... and > another...
 			if (currentcollumns)
 				comparison--;
@@ -231,29 +260,25 @@ void manageeditor(char ** s)
 				addx(1);
 				currentcollumns++;
 			}
-			putchar(c);
-			if ((nullpos[currentline] + 1) % INITIALPERLINE == 0) { //reallocate if necessary
-				s[currentline] = realloc(s[currentline], sizeof(unsigned char) * (INITIALPERLINE + nullpos[currentline] + 1));
-				if (s[currentline] == NULL)
-					printf("\nPanicking!!");
-				printf(ESC"[%d;%df", 24, 1);
-				printf("\n\n\n\n\n\n\nReallocating: %d", INITIALPERLINE + nullpos[currentline] + 1);
 			}
+			putchar(c);
+			if ((nullpos[currentline] + 1) % INITIALPERLINE == 0) //reallocate if necessary
+				reallocateline(lines[currentline], nullpos[currentline]);
 			if (currentchar != nullpos[currentline]) { //move the string, if currrent char is not at the end
-				movstr(s[currentline], currentchar);
+				movstr(lines[currentline], currentchar);
 			}
 			else {
-				s[currentline][currentchar + 1] = '\0';
+				lines[currentline][currentchar + 1] = '\0';
 			}
-			s[currentline][currentchar] = c;
-			addx(1); currentchar++; nullpos[currentline]++;
-			if (currentchar != nullpos[currentline])
-				updateline(size.ws_col, currentcollumns, currentchar, s[currentline]);
+			lines[currentline][currentchar] = c;
+			addx(1); showcursor(); currentchar++; nullpos[currentline]++;
+			if (currentchar != nullpos[currentline]) 
+				updateline(size.ws_col, currentcollumns, currentchar, lines[currentline]);
 			break;
 		}
-		printf("\n\n");
+		/*printf("\n\n");
 		printf(ESC"[%d;%df", 25, 1);
-		printf("%d, %d", nullpos[currentline], currentchar);
+		printf("%d, %d", nullpos[currentline], currentchar);*/
 	}
 	free(nullpos);
 }
@@ -269,7 +294,7 @@ void clearline(int ws_colsize)
 	resetx();
 }
 
-void updateline(int ws_colsize, int currentcollumns, int currentchar, char line[])
+void updateline(int ws_colsize, int currentcollumns, int currentchar, unsigned char * line)
 {
 	int comparison, i;
 
@@ -282,10 +307,13 @@ void updateline(int ws_colsize, int currentcollumns, int currentchar, char line[
 		putchar(line[i]);
 		i++;
 	}
+	if (i < comparison) {
+		putchar(' ');
+	}
 	addx(-1);
 }
 
-void backmovline(int ws_colsize, int *currentcollumns, int currentchar, char line[])
+void backmovline(int ws_colsize, int *currentcollumns, int currentchar, unsigned char * line)
 {	
 	if ((*currentcollumns) && getx() == 2) { //in the case where we exit the currentcollumn
 		int comparison, i;
@@ -305,6 +333,7 @@ void backmovline(int ws_colsize, int *currentcollumns, int currentchar, char lin
 			i++;
 			addx(1);
 		}
+		showcursor();
 	}
 	else
 	{
@@ -312,7 +341,7 @@ void backmovline(int ws_colsize, int *currentcollumns, int currentchar, char lin
 	}
 }
 
-void firstpl(int ws_colsize, int currentline, char line[])
+void firstpl(int ws_colsize, unsigned char * line)
 {
 	clearline(ws_colsize);
 	int comparison, i;
@@ -344,16 +373,19 @@ void resety()
 	printf(ESC"[%d;%df", curpos.y, curpos.x);
 }
 
+void showcursor()
+{
+	printf(ESC"[%d;%df", curpos.y, curpos.x);
+	putchar('|');
+	printf(ESC"[%d;%df", curpos.y, curpos.x);
+}
+
 void addx(int n)
 {
 	if (getx() + n < 1) {
 		return;
 	}
-	if (n < 0)
-		putchar(' ');
 	curpos.x += n;
-	printf(ESC"[%d;%df", curpos.y, curpos.x);
-	putchar('|');
 	printf(ESC"[%d;%df", curpos.y, curpos.x);
 }
 
@@ -387,7 +419,7 @@ void enable_raw()
 	new_tio=old_tio;
 
 	/* disable canonical mode (buffered i/o) and local echo */
-	new_tio.c_lflag &=(~ICANON & ~ECHO);
+	new_tio.c_lflag &=(~ICANON & ~ECHO & ~ISIG);
 
 	/* set the new settings immediately */
 	tcsetattr(STDIN_FILENO,TCSANOW,&new_tio);
