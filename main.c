@@ -11,7 +11,7 @@
 #define CRTL(c) ((c) - 'A' + 1)
 #define INTIALLINES 10
 #define INITIALPERLINE 50
-#define TAB_LENGTH 8
+#define TABLENGTH 4
 
 struct winsize size;
 
@@ -57,20 +57,6 @@ int main(int argc, char ** argv)
 	clearscreen();
 	i = 0;
 	while (text[i]) {
-		printf("\nline[%d] is:\n", i);
-		chartoprint = sizeof(text[i]);
-		ps = text[i];
-		while (chartoprint) {
-			if (chartoprint > (size_t) size.ws_col) {
-				printf("%.*s \n", size.ws_col - 1, ps);
-				ps += size.ws_col - 1;
-				chartoprint -= size.ws_col - 1;
-			}
-			else {
-				printf("%s \n", ps);
-				chartoprint = 0;
-			}
-		}
 		free(text[i]);
 		i++;
 	}
@@ -105,8 +91,14 @@ void showcursor();
 int getx();
 int gety();
 
+int ex_tab = 0;
+
 int getkey()
 {
+	if (ex_tab) {
+		ex_tab--;
+		return ' ';
+	}
 	int c;
 	c = getchar();
 	if (c == '\033') {
@@ -130,6 +122,10 @@ int getkey()
 	}
 	else
 	{
+		if (c == '\t') {
+			ex_tab = TABLENGTH - 1;
+			return ' ';
+		}
 		return c;
 	}
 }
@@ -227,7 +223,8 @@ int manageeditor(unsigned char *** lines, char * filename)
 	int currentchar = 0, currentline = 0, nlines = 0, currentcollumns = 0; //nlines starting with 0 like the index
 	int lasthighernullpos_updown = 0; //for up and down arrows
 	int key;
-	FILE * fptr = fopen(filename, "r+");
+	int edited = 0;
+	FILE * fptr = fopen(filename, "r");
 	if (fptr) { //put the content of the file into the editor
 		int c, oldy, i;
 		while ((c = fgetc(fptr)) != EOF) {
@@ -244,6 +241,18 @@ int manageeditor(unsigned char *** lines, char * filename)
  						}
 					}
 					nlines++; currentline++; currentchar = 0, currentcollumns = 0;
+					break;
+				case '\t':
+					int tablength = TABLENGTH;
+					c = ' ';
+					while (tablength) {
+						if ((nullpos[currentline] + 1) % INITIALPERLINE == 0) //reallocate if necessary
+							reallocateline(&((*lines)[currentline]), INITIALPERLINE + nullpos[currentline] + 1);
+						(*lines)[currentline][currentchar] = c;
+						(*lines)[currentline][currentchar + 1] = '\0';
+						currentchar++; nullpos[currentline]++;
+						tablength--;
+					}
 					break;
 				default:
 					if ((nullpos[currentline] + 1) % INITIALPERLINE == 0) //reallocate if necessary
@@ -272,7 +281,8 @@ int manageeditor(unsigned char *** lines, char * filename)
 		return -1; //unknown error that prevent us from reading/writing
 	}
 	showcursor();
-	while ((key = getkey()) != CRTL('Q')) {
+	while (1) {
+		key = getkey();
 		if (key == -1) //unrecognized ESC sequence
 			continue;
 		switch (key)
@@ -387,6 +397,7 @@ int manageeditor(unsigned char *** lines, char * filename)
 			gotocurrentchar(&currentcollumns, currentchar, nullpos[currentline], (*lines)[currentline]);
 			break;
 		case BACKSPACE:
+			edited = 1;
 			if (currentchar) {
 				addx(-1);
 				currentchar--; nullpos[currentline]--;
@@ -437,6 +448,7 @@ int manageeditor(unsigned char *** lines, char * filename)
 			}
 			break;
 		case '\n':
+			edited = 1;
 			if ((nlines + 1) % INTIALLINES == 0) {
 				int i;
 				(*lines) = realloc((*lines), (sizeof(unsigned char*)) * (INTIALLINES + nlines + 1)); //+1 for next element
@@ -506,13 +518,63 @@ int manageeditor(unsigned char *** lines, char * filename)
 			if (currentchar != nullpos[currentline])
 				updateline(currentcollumns, currentchar, (*lines)[currentline]);
 			break;
+		case CRTL('S'):
+			int i;
+			FILE * fptr = fopen(filename, "w");
+			if (fptr == NULL)
+				return -1;
+			for (i = 0; i <= nlines; i++)
+				fprintf(fptr, "%s\n", (*lines)[i]);
+			fclose(fptr);
+			edited = 0;
+			break;
+		case CRTL('Q'):
+			if (edited) {
+				clearscreen();
+				printf("The file wasn't save, are you sure to leave without saving you changes? \n Save your changes? (Y/N/C)");
+				while (1) {
+					key = getkey();
+					switch (key)
+					{
+					case 'y': case 'Y':
+						int i;
+						FILE * fptr = fopen(filename, "w");
+						if (fptr == NULL)
+							return -1;
+						for (i = 0; i <= nlines; i++)
+							fprintf(fptr, "%s \n", (*lines)[i]);
+						fclose(fptr);
+						goto end;
+					case 'n': case 'N':
+						goto end;
+					case 'c': case 'C':
+						redrawscreen(currentline, *lines);
+						int oldy = gety();
+						i = currentline + 1;
+						while (gety() + 1 < size.ws_row && i <= nlines) {
+							addy(1);
+							firstpl((*lines)[i], 0);
+							i++;
+						}
+						addy(-(gety() - oldy));
+						gotocurrentchar(&currentcollumns, currentchar, *nullpos, (*lines)[currentline]);
+						break;
+					default:
+						break;
+					}
+					if (key == 'Y' || key == 'y' || key == 'N' || key == 'n' || key == 'C' || key == 'c')
+						break;
+				}
+			}
+			else
+				goto end;
+			break;
 		default:
+			edited = 1;
 			{
 			int comparison = size.ws_col; //comparison is the length of the line, since the cursor takes one char... and > another...
 			if (currentcollumns)
 				comparison--;
-			if (key == '\t')
-				comparison -= TAB_LENGTH;
 			if (getx() == comparison - 1) {
 				clearline(size.ws_col);
 				putchar('>');
@@ -528,11 +590,6 @@ int manageeditor(unsigned char *** lines, char * filename)
 			else
 				(*lines)[currentline][currentchar + 1] = '\0';
 			(*lines)[currentline][currentchar] = key;
-			if (key == '\t') {
-				printf(ESC"[%d;%df", gety(), getx());
-				putchar(' '); //erase old cursor
-				addx(TAB_LENGTH - 1);
-			}
 			addx(1); 
 			showcursor(); currentchar++; nullpos[currentline]++;
 			if (currentchar != nullpos[currentline]) 
@@ -542,6 +599,7 @@ int manageeditor(unsigned char *** lines, char * filename)
 		if (key != ARROWDOWN && key != ARROWUP)
 			lasthighernullpos_updown = 0;
 	}
+	end:
 	free(nullpos);
 	int i = nlines + 1;
 	if (!(i % INTIALLINES)) {
