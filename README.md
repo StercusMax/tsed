@@ -6,7 +6,7 @@ The editor has it's own ASCII cursor using '|', which isn't optimal but perfect 
 which makes it a very tiny editor but functional.
 
 This branch wont receive any new features excluding full tab support in the future, but apart from that, mainly fixes.
-Another branch named stanix will get new features, it will be less portable however.
+Another branch named ``stanix`` will get new features, it will be less portable however.
 
 stanix project: https://github.com/tayoky/stanix
 
