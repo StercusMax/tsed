@@ -5,8 +5,7 @@ The editor mainly target stanix, but the minimum dependencies requirements makes
 The editor has it's own ASCII cursor using '|', which isn't optimal but perfect for operating systems without cursors. It supports multi lines, multi collumns, backspacing, and a part of tabulations (replacing tabs by spaces), 
 which makes it a very tiny editor but functional.
 
-This branch wont receive any new features excluding full tab support in the future, but apart from that, mainly fixes.
-Another branch named stanix will get new features, it will be less portable however.
+This branch will receive new features and is less portable than ``main``.
 
 stanix project: https://github.com/tayoky/stanix
 
