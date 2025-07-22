@@ -91,10 +91,10 @@ void showcursor();
 int getx();
 int gety();
 
-int ex_tab = 0;
 
 int getkey()
 {
+	static int ex_tab = 0;
 	if (ex_tab) {
 		ex_tab--;
 		return ' ';
@@ -138,23 +138,18 @@ void reallocateline(unsigned char ** s, int reallocator)
 void movbackstr(unsigned char * s, int i) //i is the empty one
 {
 	s[i] = s[i + 1];
-	i++;
-	while(s[i]) {
+	for (i++; s[i]; i++)
 		s[i] = s[i + 1];
-		i++;
-	}
 }
 
 void movstr(unsigned char * s, int i) //i is the empty one
 {
 	unsigned char temp = s[i], secondtemp;
 	s[i] = ' ';
-	i++;
-	while (temp) {
+	for (i++; temp; i++) {
 		secondtemp = s[i];
 		s[i] = temp;
 		temp = secondtemp;
-		i++;
 	}
 	s[i] = temp; 
 	
@@ -165,11 +160,8 @@ void movbacklines(unsigned char ** lines, int i, int nlines) //i is the empty on
 	unsigned char * temp;
 	temp = lines[i];
 	lines[i] = lines[i + 1];
-	i++;
-	while(i < nlines) {
+	for (i++; i < nlines; i++)
 		lines[i] = lines[i + 1];
-		i++;
-	}
 	lines[i] = temp;
 	lines[i][0] = '\0';
 }
@@ -178,12 +170,10 @@ void movlines(unsigned char ** lines, int i, int nlines)
 {
 	unsigned char * temp = lines[i], * secondtemp;
 	lines[i] = lines[nlines + 1];
-	i++;
-	while (i <= nlines) {
+	for (i++; i <= nlines; i++) {
 		secondtemp = lines[i];
 		lines[i] = temp;
 		temp = secondtemp;
-		i++;
 	}
 	lines[i] = temp; 
 }
@@ -193,11 +183,8 @@ void movbacknullpos(int * nullpos, int i, int nlines) //i is the empty one
 	int temp;
 	temp = nullpos[i];
 	nullpos[i] = nullpos[i + 1];
-	i++;
-	while(i < nlines) {
+	for (i++; i < nlines; i++)
 		nullpos[i] = nullpos[i + 1];
-		i++;
-	}
 	nullpos[i] = temp;
 	nullpos[i] = 0;
 }
@@ -206,12 +193,10 @@ void movnullpos(int * nullpos, int i, int nlines)
 {
 	int temp = nullpos[i], secondtemp;
 	nullpos[i] = 0;
-	i++;
-	while (i <= nlines) {
+	for (i++; i <= nlines; i++) {
 		secondtemp = nullpos[i];
 		nullpos[i] = temp;
 		temp = secondtemp;
-		i++;
 	}
 	nullpos[i] = temp;
 }
@@ -706,13 +691,8 @@ void gotocurrentchar(int *currentcollumns , int currentchar, int nullpos, unsign
 				(*currentcollumns)++;
 		}
 		putchar('>');
-		addx(1);
-		i = 158 + (*currentcollumns - 1) * 156;
-		while (i < currentchar)  {
+		for (i = 158 + (*currentcollumns - 1) * 156, addx(1); i < currentchar; i++, addx(1))
 			putchar(s[i]);
-			i++;
-			addx(1);
-		}
 	}
 	if (currentchar != nullpos)
 		updateline(*currentcollumns, currentchar, s); //already showcursor
