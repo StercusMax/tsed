@@ -10,4 +10,5 @@ This branch wont receive any new features excluding full tab support in the futu
 stanix project: https://github.com/tayoky/stanix
 
 Here's some footages of csed usage on stanix:
+
 ![2025-07-22 13-31-21](https://github.com/user-attachments/assets/00614caf-d276-4068-9b9b-3284742a19c1)
