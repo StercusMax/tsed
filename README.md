@@ -9,7 +9,7 @@ This branch wont receive any new features excluding full tab support in the futu
 
 stanix project: https://github.com/tayoky/stanix
 
-Here's some footages of csed usage on stanix:
+Here are some footages of csed usage on stanix:
 
 
 
