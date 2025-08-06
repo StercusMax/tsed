@@ -10,7 +10,7 @@ Another branch named ``stanix`` will get new features, it will be less portable 
 
 stanix project: https://github.com/tayoky/stanix
 
-Here are some footages of csed usage on stanix:
+Here are some footages of tsed usage on stanix:
 
 
 
