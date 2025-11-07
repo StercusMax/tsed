@@ -62,6 +62,7 @@ int main(int argc, char ** argv)
 	}
 	free(text);
 	restore_term();
+	printf(ESC"[?25h");
 	return 0;
 }
 
